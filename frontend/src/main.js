@@ -8,6 +8,7 @@ import { createAppState } from './stores/appStore';
 import { copyText } from './utils/clipboard';
 import { errorMessage, formatOutput } from './utils/output';
 import { filterTools, groupByCategory } from './utils/tools';
+import { createHIITTimeline, formatTimer, resolveHIITProgress } from './utils/hiitTimer.js';
 import { CodeEditor, JsonEditor, TextEditor } from './components/editor/index.js';
 
 // Mock data for non-Wails preview
@@ -37,6 +38,7 @@ async function safeGetHistory() {
 }
 
 const state = createAppState();
+let activeToolCleanup = null;
 
 const appRoot = document.querySelector('#app');
 const systemTheme = window.matchMedia('(prefers-color-scheme: light)');
@@ -102,7 +104,7 @@ document.addEventListener('keydown', event => {
     if (modifier && event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); openCommandPalette(); return; }
     if (modifier && event.key.toLowerCase() === 'k') { event.preventDefault(); goHome(); const search=document.getElementById('searchInput'); search?.focus(); search?.select(); return; }
     if (event.key === 'Escape' && state.paletteOpen) { closeCommandPalette(); return; }
-    if (modifier && event.key === 'Enter' && state.currentView === 'editor' && state.selectedTool?.id !== 'http') { event.preventDefault(); executeToolCommand(state.selectedTool.id); }
+    if (modifier && event.key === 'Enter' && state.currentView === 'editor' && !['http', 'document-split', 'hiit-timer'].includes(state.selectedTool?.id)) { event.preventDefault(); executeToolCommand(state.selectedTool.id); }
     if (modifier && event.shiftKey && event.key.toLowerCase() === 'c' && state.currentView === 'editor') { event.preventDefault(); copyOutput(); }
     if (modifier && event.key.toLowerCase() === 'l' && state.currentView === 'editor') { event.preventDefault(); clearCurrentInput(); }
     if (modifier && event.key.toLowerCase() === 'd' && state.selectedTool) { event.preventDefault(); toggleFavorite(state.selectedTool.id); }
@@ -180,6 +182,10 @@ async function loadData() {
 function render() {
 	// 主区域按 currentView 切换，侧栏保持统一并在每次状态变化后同步刷新。
     const main = document.getElementById('mainContent');
+    if (state.currentView === 'editor' && document.getElementById('toolEditor')) {
+        activeToolCleanup?.();
+        activeToolCleanup = null;
+    }
     if (state.currentView === 'home') {
         renderHomeView(main);
     } else if (state.currentView === 'editor') {
@@ -239,6 +245,8 @@ function renderEditorView(main) {
 function renderToolEditor(tool) {
     const container = document.getElementById('toolEditor');
     if (tool.id === 'http') { renderHTTPClient(container, tool); return; }
+    if (tool.id === 'document-split') { renderDocumentSplitter(container); return; }
+    if (tool.id === 'hiit-timer') { renderHIITTimer(container); return; }
     
     // Generic editor layout for all tools
     container.innerHTML = `
@@ -277,6 +285,317 @@ function renderToolEditor(tool) {
     document.getElementById('copyBtn').onclick = () => copyOutput();
     document.getElementById('downloadBtn').onclick = () => downloadOutput(tool.name);
     document.getElementById('favoriteInputBtn').onclick = () => favoriteCurrentInput(tool);
+}
+
+function renderDocumentSplitter(container) {
+    const copy = state.settings.language === 'zh' ? {
+        intro: '生成可直接打印的单双页 PDF', detail: 'PDF 将原样拆页；Word 和 PowerPoint 会先使用 Microsoft Office 或 LibreOffice 按实际版式转换为 PDF。',
+        source: '源文件', sourceHint: '支持 PDF、DOC、DOCX、PPT、PPTX', selectFile: '选择文件', outputDir: '输出目录', outputHint: '默认与源文件同目录', selectDir: '选择目录',
+        split: '拆分奇数页 / 偶数页', note: '不会修改源文件；若同名文件已存在，会自动添加序号。', result: '处理结果', empty: '选择文件后开始拆分。', working: '正在转换与拆分…', workingHint: '正在处理，请勿关闭应用。Office 文件页数较多时可能需要一些时间…',
+    } : {
+        intro: 'Create print-ready odd/even PDFs', detail: 'PDF pages are extracted directly. Word and PowerPoint files are first rendered with Microsoft Office or LibreOffice.',
+        source: 'Source', sourceHint: 'PDF, DOC, DOCX, PPT, or PPTX', selectFile: 'Select file', outputDir: 'Output', outputHint: 'Defaults to the source folder', selectDir: 'Select folder',
+        split: 'Split odd / even pages', note: 'The source is never changed. A number is added if an output already exists.', result: 'Result', empty: 'Select a file to begin.', working: 'Converting and splitting…', workingHint: 'Processing… Keep the app open. Large Office files may take a while.',
+    };
+    container.innerHTML = `
+        <div class="document-splitter">
+            <section class="document-split-form">
+                <div class="document-split-intro">
+                    <strong>${copy.intro}</strong>
+                    <p>${copy.detail}</p>
+                </div>
+                <label class="file-picker-row">
+                    <span>${copy.source}</span>
+                    <input id="documentFilePath" class="input-field" readonly placeholder="${copy.sourceHint}">
+                    <button type="button" class="btn" id="documentFileBtn">${copy.selectFile}</button>
+                </label>
+                <label class="file-picker-row">
+                    <span>${copy.outputDir}</span>
+                    <input id="documentOutputDir" class="input-field" readonly placeholder="${copy.outputHint}">
+                    <button type="button" class="btn" id="documentOutputBtn">${copy.selectDir}</button>
+                </label>
+                <div class="document-split-actions">
+                    <button type="button" class="btn primary" id="documentSplitBtn" disabled>${copy.split}</button>
+                    <span class="hint">${copy.note}</span>
+                </div>
+            </section>
+            <section class="document-split-result">
+                <h3>${copy.result}</h3>
+                <div id="outputText" class="editor-output"><p class="placeholder">${copy.empty}</p></div>
+            </section>
+        </div>`;
+
+    const filePath = document.getElementById('documentFilePath');
+    const outputDir = document.getElementById('documentOutputDir');
+    const splitButton = document.getElementById('documentSplitBtn');
+    const output = document.getElementById('outputText');
+
+    document.getElementById('documentFileBtn').onclick = async () => {
+        try {
+            const selected = await appService.selectDocumentFile();
+            if (!selected) return;
+            filePath.value = selected;
+            splitButton.disabled = false;
+        } catch (error) { showToast(`无法选择文件：${error.message}`); }
+    };
+    document.getElementById('documentOutputBtn').onclick = async () => {
+        try {
+            const selected = await appService.selectOutputDirectory();
+            if (selected) outputDir.value = selected;
+        } catch (error) { showToast(`无法选择输出目录：${error.message}`); }
+    };
+    splitButton.onclick = async () => {
+        splitButton.disabled = true;
+        splitButton.textContent = copy.working;
+        output.innerHTML = `<p class="placeholder">${copy.workingHint}</p>`;
+        try {
+            const result = await appService.executeTool({ toolId: 'document-split', payload: { filePath: filePath.value, outputDir: outputDir.value } });
+            if (!result.success) { renderError(output, errorMessage(result.error)); return; }
+            renderDocumentSplitResult(output, result.data);
+            state.history = await safeGetHistory();
+            renderRecent();
+        } catch (error) { renderError(output, `Error: ${error.message}`); }
+        finally {
+            splitButton.disabled = !filePath.value;
+            splitButton.textContent = copy.split;
+        }
+    };
+}
+
+function renderDocumentSplitResult(container, result) {
+    const zh = state.settings.language === 'zh';
+    container.replaceChildren();
+    const summary = document.createElement('div');
+    summary.className = 'split-success';
+    const heading = document.createElement('strong');
+    const stats = document.createElement('span');
+    heading.textContent = zh ? '拆分完成' : 'Split complete';
+    stats.textContent = zh
+        ? `共 ${Number(result.totalPages)} 页 · 奇数页 ${Number(result.oddPages)} 页 · 偶数页 ${Number(result.evenPages)} 页`
+        : `${Number(result.totalPages)} pages · ${Number(result.oddPages)} odd · ${Number(result.evenPages)} even`;
+    summary.append(heading, stats);
+    container.append(summary);
+    if (result.converted) {
+        const conversion = document.createElement('p');
+        conversion.className = 'hint';
+        conversion.textContent = zh ? `已通过 ${result.converter || 'Office'} 按实际版式转换为 PDF。` : `Rendered to PDF with ${result.converter || 'Office'}.`;
+        container.append(conversion);
+    }
+    const files = zh ? [['奇数页 PDF', result.oddFile, result.oddPages], ['偶数页 PDF', result.evenFile, result.evenPages]] : [['Odd pages PDF', result.oddFile, result.oddPages], ['Even pages PDF', result.evenFile, result.evenPages]];
+    for (const [label, path, count] of files) {
+        if (!path) continue;
+        const item = document.createElement('div');
+        item.className = 'split-output-file';
+        const text = document.createElement('div');
+        const title = document.createElement('strong');
+        const location = document.createElement('code');
+        title.textContent = zh ? `${label}（${count} 页）` : `${label} (${count} pages)`;
+        location.textContent = path;
+        text.append(title, location);
+        const copy = document.createElement('button');
+        copy.className = 'btn small';
+        copy.textContent = zh ? '复制路径' : 'Copy path';
+        copy.onclick = async () => { await copyText(path); showToast(t('copied')); };
+        item.append(text, copy);
+        container.append(item);
+    }
+}
+
+function renderHIITTimer(container) {
+    const zh = state.settings.language === 'zh';
+    const copy = zh ? {
+        work: '运动', rest: '休息', rounds: '组数', seconds: '秒', sound: '阶段提示音',
+        start: '开始训练', pause: '暂停', resume: '继续', restart: '再次开始', reset: '重置',
+        ready: '准备开始', complete: '训练完成', round: '第 {current} / {total} 组', total: '总剩余',
+        plan: '训练设置', presets: '快捷方案', tabata: 'Tabata 20 / 10 × 8', balanced: '30 / 15 × 10', endurance: '45 / 15 × 8',
+    } : {
+        work: 'Work', rest: 'Rest', rounds: 'Rounds', seconds: 'sec', sound: 'Sound cues',
+        start: 'Start workout', pause: 'Pause', resume: 'Resume', restart: 'Start again', reset: 'Reset',
+        ready: 'Ready', complete: 'Workout complete', round: 'Round {current} / {total}', total: 'Total left',
+        plan: 'Workout setup', presets: 'Presets', tabata: 'Tabata 20 / 10 × 8', balanced: '30 / 15 × 10', endurance: '45 / 15 × 8',
+    };
+
+    container.innerHTML = `
+        <div class="hiit-timer">
+            <section class="hiit-config-panel">
+                <div class="hiit-section-heading"><span>${copy.plan}</span><small id="hiitPlanSummary"></small></div>
+                <div class="hiit-presets" aria-label="${copy.presets}">
+                    <button class="hiit-preset active" type="button" data-work="20" data-rest="10" data-rounds="8">${copy.tabata}</button>
+                    <button class="hiit-preset" type="button" data-work="30" data-rest="15" data-rounds="10">${copy.balanced}</button>
+                    <button class="hiit-preset" type="button" data-work="45" data-rest="15" data-rounds="8">${copy.endurance}</button>
+                </div>
+                <div class="hiit-fields">
+                    <label><span>${copy.work}</span><div><input id="hiitWork" type="number" min="1" max="3600" value="20"><small>${copy.seconds}</small></div></label>
+                    <label><span>${copy.rest}</span><div><input id="hiitRest" type="number" min="1" max="3600" value="10"><small>${copy.seconds}</small></div></label>
+                    <label><span>${copy.rounds}</span><div><input id="hiitRounds" type="number" min="1" max="99" value="8"></div></label>
+                </div>
+                <label class="hiit-sound"><input id="hiitSound" type="checkbox" checked><span>${copy.sound}</span></label>
+                <div class="hiit-actions">
+                    <button id="hiitStartPause" type="button" class="btn primary">${copy.start}</button>
+                    <button id="hiitReset" type="button" class="btn" disabled>${copy.reset}</button>
+                </div>
+            </section>
+            <section id="hiitStage" class="hiit-stage" data-phase="ready" aria-live="polite">
+                <div class="hiit-stage-meta"><span id="hiitRound"></span><span id="hiitTotal"></span></div>
+                <div id="hiitRing" class="hiit-ring">
+                    <div class="hiit-orb" aria-hidden="true"><span></span></div>
+                    <div class="hiit-readout">
+                        <span id="hiitPhase">${copy.ready}</span>
+                        <strong id="hiitTime">00:20</strong>
+                    </div>
+                </div>
+                <div class="hiit-track"><span id="hiitTrackFill"></span></div>
+            </section>
+        </div>`;
+
+    const workInput = document.getElementById('hiitWork');
+    const restInput = document.getElementById('hiitRest');
+    const roundsInput = document.getElementById('hiitRounds');
+    const soundInput = document.getElementById('hiitSound');
+    const startPause = document.getElementById('hiitStartPause');
+    const resetButton = document.getElementById('hiitReset');
+    const stage = document.getElementById('hiitStage');
+    const ring = document.getElementById('hiitRing');
+    const phaseText = document.getElementById('hiitPhase');
+    const timeText = document.getElementById('hiitTime');
+    const roundText = document.getElementById('hiitRound');
+    const totalText = document.getElementById('hiitTotal');
+    const trackFill = document.getElementById('hiitTrackFill');
+    const planSummary = document.getElementById('hiitPlanSummary');
+    const presets = [...container.querySelectorAll('.hiit-preset')];
+
+    let timeline;
+    let running = false;
+    let elapsedBase = 0;
+    let startedAt = 0;
+    let frame = 0;
+    let lastSegment = -1;
+    let lastCountdownSecond = -1;
+    let audioContext = null;
+
+    const readTimeline = () => createHIITTimeline({ workSeconds: workInput.value, restSeconds: restInput.value, rounds: roundsInput.value });
+    const setText = (element, value) => { if (element.textContent !== value) element.textContent = value; };
+    const setConfigEnabled = enabled => {
+        for (const control of [workInput, restInput, roundsInput, ...presets]) control.disabled = !enabled;
+    };
+    const tone = (frequency, offset = 0, duration = .09) => {
+        if (!soundInput.checked) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        audioContext ||= new AudioContext();
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const start = audioContext.currentTime + offset;
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(.0001, start);
+        gain.gain.exponentialRampToValueAtTime(.16, start + .015);
+        gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+        oscillator.connect(gain).connect(audioContext.destination);
+        oscillator.start(start);
+        oscillator.stop(start + duration + .02);
+    };
+    const announceTransition = snapshot => {
+        if (snapshot.complete) {
+            tone(660, 0, .12); tone(820, .16, .12); tone(1040, .32, .18);
+        } else {
+            tone(snapshot.phase === 'work' ? 880 : 520, 0, .14);
+        }
+    };
+    const renderSnapshot = (elapsed, status = running ? 'running' : 'paused') => {
+        const snapshot = resolveHIITProgress(timeline, elapsed);
+        const displayPhase = elapsed === 0 && !running ? 'ready' : snapshot.phase;
+        stage.dataset.phase = displayPhase;
+        stage.classList.toggle('paused', status === 'paused' && elapsed > 0 && !snapshot.complete);
+        setText(phaseText, displayPhase === 'ready' ? copy.ready : displayPhase === 'complete' ? copy.complete : copy[displayPhase]);
+        setText(timeText, displayPhase === 'ready' ? formatTimer(timeline.config.workSeconds * 1000) : formatTimer(snapshot.remainingMs));
+        setText(roundText, copy.round.replace('{current}', String(snapshot.round)).replace('{total}', String(timeline.config.rounds)));
+        setText(totalText, `${copy.total} ${formatTimer(snapshot.totalRemainingMs)}`);
+        ring.style.setProperty('--hiit-progress', `${snapshot.progress * 360}deg`);
+        trackFill.style.width = `${Math.min(100, (elapsed / timeline.totalMs) * 100)}%`;
+        if (running && !snapshot.complete && snapshot.segmentIndex !== lastSegment) {
+            if (lastSegment >= 0) announceTransition(snapshot);
+            lastSegment = snapshot.segmentIndex;
+            lastCountdownSecond = -1;
+        }
+        const countdownSecond = Math.ceil(snapshot.remainingMs / 1000);
+        if (running && !snapshot.complete && countdownSecond <= 3 && countdownSecond > 0 && countdownSecond !== lastCountdownSecond) {
+            tone(700);
+            lastCountdownSecond = countdownSecond;
+        }
+        if (snapshot.complete && running) {
+            running = false;
+            elapsedBase = timeline.totalMs;
+            cancelAnimationFrame(frame);
+            announceTransition(snapshot);
+            startPause.textContent = copy.restart;
+            resetButton.disabled = false;
+            setConfigEnabled(true);
+        }
+        return snapshot;
+    };
+    const tick = now => {
+        if (!running) return;
+        const elapsed = Math.min(timeline.totalMs, elapsedBase + now - startedAt);
+        const snapshot = renderSnapshot(elapsed, 'running');
+        if (!snapshot.complete) frame = requestAnimationFrame(tick);
+    };
+    const reset = () => {
+        running = false;
+        cancelAnimationFrame(frame);
+        elapsedBase = 0;
+        startedAt = 0;
+        lastSegment = -1;
+        lastCountdownSecond = -1;
+        timeline = readTimeline();
+        workInput.value = timeline.config.workSeconds;
+        restInput.value = timeline.config.restSeconds;
+        roundsInput.value = timeline.config.rounds;
+        planSummary.textContent = `${timeline.config.workSeconds}s / ${timeline.config.restSeconds}s × ${timeline.config.rounds} · ${formatTimer(timeline.totalMs)}`;
+        startPause.textContent = copy.start;
+        resetButton.disabled = true;
+        setConfigEnabled(true);
+        renderSnapshot(0, 'ready');
+    };
+    const toggle = () => {
+        if (elapsedBase >= timeline.totalMs) reset();
+        if (running) {
+            elapsedBase = Math.min(timeline.totalMs, elapsedBase + performance.now() - startedAt);
+            running = false;
+            cancelAnimationFrame(frame);
+            startPause.textContent = copy.resume;
+            resetButton.disabled = false;
+            renderSnapshot(elapsedBase, 'paused');
+            return;
+        }
+        running = true;
+        startedAt = performance.now();
+        startPause.textContent = copy.pause;
+        resetButton.disabled = false;
+        setConfigEnabled(false);
+        if (elapsedBase === 0) tone(880, 0, .14);
+        frame = requestAnimationFrame(tick);
+    };
+
+    for (const input of [workInput, restInput, roundsInput]) input.onchange = () => {
+        presets.forEach(button => button.classList.remove('active'));
+        reset();
+    };
+    for (const preset of presets) preset.onclick = () => {
+        workInput.value = preset.dataset.work;
+        restInput.value = preset.dataset.rest;
+        roundsInput.value = preset.dataset.rounds;
+        presets.forEach(button => button.classList.toggle('active', button === preset));
+        reset();
+    };
+    startPause.onclick = toggle;
+    resetButton.onclick = reset;
+    reset();
+
+    activeToolCleanup = () => {
+        running = false;
+        cancelAnimationFrame(frame);
+        if (audioContext) void audioContext.close();
+    };
 }
 
 function renderHTTPClient(container, tool) {
@@ -869,18 +1188,24 @@ function renderWorkflowSearch(query) {
 }
 
 function selectToolAndEdit(tool) {
+    activeToolCleanup?.();
+    activeToolCleanup = null;
     state.selectedTool = tool;
     state.currentView = 'editor';
     render();
 }
 
 function goHome() {
+    activeToolCleanup?.();
+    activeToolCleanup = null;
     state.currentView = 'home';
     state.selectedTool = null;
     render();
 }
 
 function goSettings() {
+    activeToolCleanup?.();
+    activeToolCleanup = null;
     state.currentView = 'settings';
     render();
 }

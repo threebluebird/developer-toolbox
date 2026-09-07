@@ -60,6 +60,8 @@ const toolMessages = {
     serial: ['Serial Port', '串口调试', 'List serial ports and exchange text or hex data.', '枚举串口并收发文本或十六进制数据。'],
     pinyin: ['Chinese Pinyin', '文字转拼音', 'Convert Chinese text to full pinyin or initials.', '将中文转换为全拼或拼音首字母。'],
     'database-docs': ['Database Syntax Docs', '数据库语法文档', 'Offline syntax reference for common databases.', 'PostgreSQL、MySQL、Oracle、SQL Server 离线语法速查。'],
+    'document-split': ['Document Page Splitter', '文档单双页拆分', 'Split PDF, Word, and PowerPoint files into odd/even PDFs for duplex printing.', '将 PDF、Word、PPT 拆成奇数页和偶数页 PDF，方便正反面打印。'],
+    'hiit-timer': ['HIIT Timer', 'HIIT 间歇计时器', 'Configure work, rest, and rounds with breathing-light phase cues.', '配置运动、休息时间和组数，通过呼吸灯圆球提示训练阶段。'],
 };
 
 export function translate(language, key) {
@@ -76,6 +78,6 @@ export function localizeTool(tool, language) {
 
 export function localizeCategory(category, language) {
     if (language !== 'zh') return category;
-    const categories = { Convert: '转换', Crypto: '安全', Encode: '编码', Format: '格式化', Generator: '生成器', Text: '文本', data: '数据', text: '文本', network: '网络', developer: '开发', encoding: '编码', generator: '生成器', security: '安全', time: '时间' };
+    const categories = { Convert: '转换', Crypto: '安全', Encode: '编码', Format: '格式化', Generator: '生成器', Text: '文本', data: '数据', text: '文本', network: '网络', developer: '开发', document: '文档', utility: '实用工具', encoding: '编码', generator: '生成器', security: '安全', time: '时间' };
     return categories[category] || category;
 }

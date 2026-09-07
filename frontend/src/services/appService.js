@@ -11,7 +11,9 @@ import {
     RemoveFavoriteItem,
     SaveSettings,
     SearchTools,
+    SelectDocumentFile,
     SelectFile,
+    SelectOutputDirectory,
 } from '../../wailsjs/go/main/App.js';
 
 const previewTools = [
@@ -47,6 +49,8 @@ const previewTools = [
     { id: 'serial', name: 'Serial Port', description: 'Exchange serial data', category: 'network', version: '0.5.0' },
     { id: 'pinyin', name: 'Chinese Pinyin', description: 'Convert Chinese to pinyin', category: 'text', version: '0.5.0' },
     { id: 'database-docs', name: 'Database Syntax Docs', description: 'Offline database syntax reference', category: 'developer', version: '0.5.0' },
+    { id: 'document-split', name: 'Document Page Splitter', description: 'Split PDF, Word, and PowerPoint files into odd/even PDFs', category: 'document', version: '1.0.0' },
+    { id: 'hiit-timer', name: 'HIIT Timer', description: 'Configurable work/rest timer with rounds and a breathing-light display', category: 'utility', version: '1.0.0' },
 ];
 
 const hasWails = () => Boolean(window.go?.main?.App);
@@ -101,4 +105,6 @@ export const appService = {
     saveSettings: invoke(SaveSettings, () => undefined),
     searchTools: invoke(SearchTools, query => previewTools.filter(tool => JSON.stringify(tool).toLowerCase().includes(String(query).toLowerCase()))),
     selectFile: invoke(SelectFile, () => ''),
+    selectDocumentFile: invoke(SelectDocumentFile, () => ''),
+    selectOutputDirectory: invoke(SelectOutputDirectory, () => ''),
 };

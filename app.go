@@ -16,12 +16,15 @@ import (
 	"developer-toolbox/backend/registry"
 	"developer-toolbox/backend/services"
 	"developer-toolbox/backend/storage"
+	"developer-toolbox/backend/workbench"
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is the root application container for the toolbox.
 type App struct {
+	workbenchMu sync.Mutex
+	workbenchService *workbench.Service
 	ctx             context.Context
 	name            string
 	toolService     *services.ToolService
@@ -94,6 +97,9 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(context.Context) {
+	a.workbenchMu.Lock()
+	if a.workbenchService != nil { _ = a.workbenchService.Close() }
+	a.workbenchMu.Unlock()
 	a.logger.Info("application stopped")
 	if a.fileLogger != nil {
 		_ = a.fileLogger.Close()
@@ -129,6 +135,24 @@ func (a *App) SelectFile() (string, error) {
 	})
 }
 
+// SelectDocumentFile selects a source supported by the duplex-print splitter.
+func (a *App) SelectDocumentFile() (string, error) {
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "选择 PDF、Word 或 PowerPoint 文件",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "文档 (*.pdf;*.doc;*.docx;*.ppt;*.pptx)", Pattern: "*.pdf;*.doc;*.docx;*.ppt;*.pptx"},
+			{DisplayName: "PDF (*.pdf)", Pattern: "*.pdf"},
+			{DisplayName: "Word (*.doc;*.docx)", Pattern: "*.doc;*.docx"},
+			{DisplayName: "PowerPoint (*.ppt;*.pptx)", Pattern: "*.ppt;*.pptx"},
+		},
+	})
+}
+
+// SelectOutputDirectory selects where generated odd/even PDFs are written.
+func (a *App) SelectOutputDirectory() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择拆分文件输出目录"})
+}
+
 // ExecuteTool runs a tool by its ID using the provided input payload.
 func (a *App) ExecuteTool(input models.ToolInput) models.ToolOutput {
 	// 执行期间持有读锁，避免 SaveSettings 切换 Repository 时产生数据竞争。
@@ -140,7 +164,7 @@ func (a *App) ExecuteTool(input models.ToolInput) models.ToolOutput {
 	} else if output.Error != nil {
 		a.logger.Warn("tool failed id=%s code=%s", input.ToolID, output.Error.Code)
 	}
-	if output.Success {
+	if output.Success && input.ToolID != "http" && input.ToolID != "jwt" {
 		// 历史落盘失败不覆盖工具本身的成功结果，避免辅助功能影响主要操作。
 		_ = a.historyService.Add(models.History{
 			ID:     uuid.NewString(),

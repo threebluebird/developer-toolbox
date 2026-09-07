@@ -7,8 +7,8 @@ Developer Toolbox 是一个面向程序员的本地桌面工具箱，基于 Go�
 当前版本：`0.5.0`
 
 - 已完成统一 Tool 接口、Registry、Service 和 Storage 分层
-- 已实现 32 个本地开发工具
-- 支持网络调试、串口通信、数据转换、离线数据库语法文档
+- 已实现 34 个本地开发工具
+- 支持 HIIT 间歇计时、文档单双页拆分、网络调试、串口通信、数据转换、离线数据库语法文档
 - 支持命令面板、快捷键、History 2.0、Favorite 2.0 和本地持久化
 - 支持深色、浅色、跟随系统主题
 - 支持中文、英文界面即时切换
@@ -36,6 +36,8 @@ Developer Toolbox 是一个面向程序员的本地桌面工具箱，基于 Go�
 | 串口调试 | 枚举串口，配置波特率并收发文本或 HEX 数据 |
 | 文字转拼音 | 离线转换全拼和拼音首字母，支持自定义分隔符 |
 | 数据库语法文档 | PostgreSQL、MySQL、Oracle、SQL Server 常用语法及字符串、数组/集合、JSON、日期时间函数离线速查 |
+| 文档单双页拆分 | 将 PDF、Word、PowerPoint 按奇数页和偶数页分别输出为 PDF，方便正反面打印；源文件保持不变 |
+| HIIT 间歇计时器 | 自定义运动、休息时长与组数，支持快捷方案、暂停/继续、提示音和阶段呼吸灯 |
 
 应用公共能力：
 
@@ -62,6 +64,7 @@ Developer Toolbox 是一个面向程序员的本地桌面工具箱，基于 Go�
 - `github.com/google/uuid`
 - `github.com/mozillazg/go-pinyin`（离线拼音字典）
 - `go.bug.st/serial`（跨平台串口访问）
+- `github.com/pdfcpu/pdfcpu`（PDF 页数读取与单双页抽取）
 
 ## 目录结构
 
@@ -73,7 +76,7 @@ developer-toolbox/
 │  ├─ registry/           # Tool 注册、查询和稳定排序
 │  ├─ services/           # 工具、搜索、历史、收藏和设置编排
 │  ├─ storage/            # 文件存储及 Repository
-│  └─ tools/              # 32 个独立工具模块
+│  └─ tools/              # 34 个独立工具模块
 ├─ frontend/
 │  ├─ src/
 │  │  ├─ services/        # Wails API 适配层

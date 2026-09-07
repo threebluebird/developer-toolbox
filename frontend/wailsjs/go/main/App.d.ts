@@ -30,4 +30,9 @@ export function SaveSettings(arg1:models.Settings):Promise<void>;
 
 export function SearchTools(arg1:string):Promise<Array<models.Tool>>;
 
+export function SelectDocumentFile():Promise<string>;
+
 export function SelectFile():Promise<string>;
+
+export function SelectOutputDirectory():Promise<string>;
+export function Workbench(action: string, payload: Record<string, any>): Promise<any>;

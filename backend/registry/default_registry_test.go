@@ -12,7 +12,7 @@ type dummyTool struct {
 
 func TestCreateDefaultRegistryIncludesExtendedTools(t *testing.T) {
 	r := CreateDefaultRegistry()
-	for _, id := range []string{"amount-cn", "tcp", "udp", "serial", "pinyin", "database-docs"} {
+	for _, id := range []string{"amount-cn", "tcp", "udp", "serial", "pinyin", "database-docs", "document-split", "hiit-timer"} {
 		if _, ok := r.Get(id); !ok {
 			t.Errorf("extended tool %q was not registered", id)
 		}

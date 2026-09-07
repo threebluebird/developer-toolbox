@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/**/*.test.js"
+    "test": "node --test src/**/*.test.js",
+    "test:hiit": "node e2e/hiit.mjs"
   },
   "devDependencies": {
     "playwright": "^1.62.1",

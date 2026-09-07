@@ -14,8 +14,10 @@ import (
 	"developer-toolbox/backend/tools/csvtool"
 	"developer-toolbox/backend/tools/dbdocs"
 	"developer-toolbox/backend/tools/dnstool"
+	"developer-toolbox/backend/tools/documentsplit"
 	"developer-toolbox/backend/tools/gittool"
 	hashtool "developer-toolbox/backend/tools/hash"
+	"developer-toolbox/backend/tools/hiittimer"
 	"developer-toolbox/backend/tools/htmltool"
 	"developer-toolbox/backend/tools/httpclient"
 	jsontool "developer-toolbox/backend/tools/json"
@@ -95,6 +97,8 @@ func CreateDefaultRegistry() *DefaultRegistry {
 	_ = r.Register(serialtool.NewSerialTool())
 	_ = r.Register(pinyintool.NewPinyinTool())
 	_ = r.Register(dbdocs.NewDatabaseDocsTool())
+	_ = r.Register(documentsplit.NewTool())
+	_ = r.Register(hiittimer.NewTool())
 	return r
 }
 

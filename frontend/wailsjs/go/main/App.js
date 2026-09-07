@@ -58,6 +58,17 @@ export function SearchTools(arg1) {
   return window['go']['main']['App']['SearchTools'](arg1);
 }
 
+export function SelectDocumentFile() {
+  return window['go']['main']['App']['SelectDocumentFile']();
+}
+
 export function SelectFile() {
   return window['go']['main']['App']['SelectFile']();
+}
+
+export function SelectOutputDirectory() {
+  return window['go']['main']['App']['SelectOutputDirectory']();
+}
+export function Workbench(action, payload) {
+  return window['go']['main']['App']['Workbench'](action, payload);
 }
